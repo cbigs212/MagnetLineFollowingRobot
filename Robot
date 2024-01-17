@@ -1,0 +1,282 @@
+/*
+   Magnetic_Sensor_Final
+   by C. Bigelow on 2/20/23
+
+   This robot is being programmed to mark with a sharpie where it detects a magnet.
+   It works by following lines using infrared line following sensors. It makes a sound with
+   a piezo buzzer as it detects a magnet, it will return the strength of the field on an lcd screen,
+   and flash a red or blue LED depending on the direction of the magnetic field
+*/
+
+#include <LiquidCrystal.h>
+
+//global and constant variables
+const int servoPinL = 11; // servo pin for LEFT wheel
+const int servoPinR = 12;  // servo pin for RIGHT wheel
+const int servoPinF = 0; // servo pin for front servo that holds pen
+const int LEDPin = 13; // the onboard LED pin (for diagnostics)
+const int IrLPin = 1; // the pin for the left line following sensor
+const int IrRPin = 2; // the pin for the right line following sensor
+// the pins for the hall effect sensors that detect magnetic fields
+int magPin1 = A1;
+int magPin2 = A2;
+int magPin3 = A3;
+int magPin4 = A4;
+int magPin5 = A5;
+int magPin6 = A6;
+int magPin7 = A7;
+int magPin8 = A8;
+int magPin9 = A9;
+const int RS = 9, E = 8, D4 = 7, D5 = 6, D6 = 5, D7 = 4; // attaching lcd board to motherboard pins
+LiquidCrystal lcd(RS, E, D4, D5, D6, D7); // Global variable that defines LCD Board
+int bluePin = 13; // pin that the blue LED is connected to
+int redPin = A0; // pin that the red LED is connected to
+int audioPin = 10; // pin that the piezo buzzer is connected to
+const int armUp = 2000; // this is the "up" position of the front servo. The servo is at 2000 when the arm is up.
+const int armDown = 1150; // this is the "down" position of the front servo. the servo is at 1150 when the arm is down. They will create motion when called together.
+
+
+void setup() {
+  pinMode (servoPinL, OUTPUT); // putting the left servo in the proper mode
+  pinMode (servoPinR, OUTPUT); // putting the right servo in the proper mode
+  pinMode (servoPinF, OUTPUT); // putting the front servo in the proper mode
+  pinMode(LEDPin, OUTPUT); // putting the light used for the "blinkOk" function in the proper mode
+  // putting the hall effect sensors in the proper mode
+  pinMode(magPin1, INPUT);
+  pinMode(magPin2, INPUT);
+  pinMode(magPin3, INPUT);
+  pinMode(magPin4, INPUT);
+  pinMode(magPin5, INPUT);
+  pinMode(magPin6, INPUT);
+  pinMode(magPin7, INPUT);
+  pinMode(magPin8, INPUT);
+  pinMode(magPin9, INPUT);
+  pinMode(IrRPin, INPUT); // putting the right line following sensor in the proper mode
+  pinMode(IrLPin, INPUT); // putting the left line following sensor in the proper mode
+  lcd.begin (16, 2); // Sets up the lcd's number of columns and rows on the screen
+  pinMode (redPin, OUTPUT); // putting the red LED in the proper mode
+  pinMode (bluePin, OUTPUT); // putting the blue LED in the proper mode
+  pinMode (audioPin, OUTPUT); // putting the piezo buzzer in the proper mode
+  blinkOK(3); // a diagnostic tool to let user know all is OK
+  arm(armUp); // by calling arm up in the set up, it ensures that the sharpie is in the correct poisition before the robot begins to move.
+
+}
+
+void loop() {
+  int RightSensorValue = digitalRead(IrRPin); // this allows the right sensor to read and detect its surroundings through 0s and 1s
+  int LeftSensorValue = digitalRead(IrLPin); // this allows the left sensor to read and detect its surroundings through 0s and 1s
+  // Each of the sensors use "printMagneticFieldData()" to return the different values of its surroundings.
+  // When one sensor is pinged, it then undergoes a series of actions specific to that sensor before beginning to read all the other sensors again.
+  printMagneticFieldData(magPin1);
+  printMagneticFieldData (magPin2);
+  printMagneticFieldData (magPin3);
+  printMagneticFieldData (magPin4);
+  printMagneticFieldData (magPin5);
+  printMagneticFieldData (magPin6);
+  printMagneticFieldData (magPin7);
+  printMagneticFieldData (magPin8);
+  printMagneticFieldData (magPin9);
+
+  // The robot is able to simultaneously follow lines and read its surroundings in the loop() function.
+
+  if (RightSensorValue == 1) { // this tells the robot's right wheel to turn right if the line its following appears to be veering right
+    fullturnRightSlow(1); // it will take one step to the right at a time
+  }
+  else if (LeftSensorValue == 1) { // this tells the robot's left wheel to turn left if the line its following appears to be veering left
+    fullturnLeftSlow(1); // it will take one step to the left at a time
+  }
+  else { // when the line does not seem to be curving, or detect a magnetic field, it will continue forward
+    forwardSlow(1);
+  }
+
+}
+
+void RB(int redState, int blueState) { // this function allows the Red and Blue LEDs to be called
+
+  digitalWrite (redPin, redState); // digitalWrite for red pin
+  digitalWrite (bluePin, blueState); // digitalWrite for blue pin
+}
+
+void printMagneticFieldData(int magPin) { // by using "int" magPin, the singular function can work for multiple sensors. In this case, it works for magPins 1-9
+
+  int rawMagData = analogRead (magPin); // each of the 9 hall sensors is reading its surroundings through an array since we used "int" in the start of the function
+
+  float magVout = DAC (rawMagData); // converts the raw digital reading into a voltage
+
+  float B = calcBField(magVout); // converts the voltage data into magnetic field strength
+
+  // determine and print the direction of the magnetic field: if B > 0 it is North.
+  // If B < 0 it is South. Otherwise (if B=0) no magnetic field is detected
+  String direction;
+  if (B > 15) { // when there is a strong south magnetic field, this if statement is pinged.
+    direction = "South"; // the direction is south since the magnetic field strentgh is positive
+    lcd.clear(); // clears lcd screen in case there is text on it from previous actions
+    lcd.setCursor (0, 0); // sets up the first row of the lcd
+    lcd.print ("Field Detected"); // it will print to the top row of the screen, "Field Detected"
+    lcd.setCursor (0, 15); // this moves the cursor to left side of the top row of the screen
+    lcd.print (magPin - 14); // in the same row, it prints to the user which magnet sensor was pinged
+    lcd.setCursor (0, 1); // this sets up the second row of the lcd
+    lcd.print (B); // this prints B, the magnetic field strength
+    lcd.print ("mT (south)"); // this says the units and directon of the field in the same row of the lcd
+    RB (0, 1); // this calls the RB() function, and turns on the blue LED, which indicates a south facing magnetic field
+    magFound(magPin); // once the robot does action not specific to its pinged pin, it then calls the magFound() function for motion.
+
+  }
+
+  else if (B < -15) { // when there is a strong north magnetic field, this else if statement is pinged.
+    direction = "North"; // the direction is north since the magnetic field strentgh is negative
+    lcd.clear(); // clears lcd screen in case there is text on it from previous actions
+    lcd.setCursor (0, 0); // sets up the first row of the lcd
+    lcd.print ("Field Detected"); // it will print to the top row of the screen, "Field Detected"
+    lcd.setCursor (0, 15); // this moves the cursor to left side of the top row of the screen
+    lcd.print (magPin - 14); // in the same row, it prints to the user which magnet sensor was pinged
+    lcd.setCursor (0, 1); // this sets up the second row of the lcd
+    lcd.print (B); // this prints B, the magnetic field strength
+    lcd.print ("mT (north)"); // this says the units and directon of the field in the same row of the lcd
+    RB (1, 0); // this calls the RB() function, and turns on the red LED, which indicates a north facing magnetic field
+    magFound(magPin); // once the robot does action not specific to its pinged pin, it then calls the magFound() function for motion.
+
+  }
+  else { // when there is no strong magnetic field detected, this else statement is used
+    direction = "no field detected"; // there is no strong magnetic field
+    RB (0, 0); // this calls the RB() function, and makes sure each LED is off, since the field strength is neither north or south
+    lcd.clear(); // clears lcd screen in case there is text on it from previous actions
+    lcd.setCursor (0, 0); // sets up the first row of the lcd
+    lcd.print ("No Field Detected"); // it will print to the top row of the screen, "No Field Detected"
+  }
+}
+
+//DAC () is a function that converts a 10-bit digital sensor value into a voltage
+float DAC (int digitalValue) {
+  float analogValue = digitalValue * 3.3 / 1023.0;  // equation 21.2
+  return analogValue;
+}
+
+//calcBField() takes a voltage reading from the DRV5053RAQLPGM Hall - Effect sensor
+// it then returns the magnetic field intensity (B) in unit sof milliteslas (mT)
+float calcBField (float magVoltage) {
+  float BFieldIntensity = -22.0 * (magVoltage - 1.0); // equation 21.2
+  return BFieldIntensity;
+}
+
+void magFound (int magPin) {
+
+  if (magPin == magPin5)   { // this is for when magnet pin #5 detects a strong magnetic field
+
+    analogWrite (audioPin, 80); // the audio pin will turn on once the robot begins the move
+    robotStop(10); // this ensures that the robot comes to a stop before marking its surroundings with a sharpie
+    arm(armDown); // this calls the arm function and brings the arm down
+    arm(armUp); // this calls the arm function and brings it back up
+    analogWrite (audioPin, 0); // the audio pin will the turn off once the robot completes its motion
+    forwardSlow(3); // it moves forward 3 steps once the motion is completed in order to not detect the same magnet
+
+
+  }
+
+  else if (magPin == magPin6)  { // this is for when magnet pin #6 detects a strong magnetic field
+
+    analogWrite (audioPin, 96);
+    robotStop(10); // it stops before its turn for precision
+    fullturnLeftSlow(2); // it takes a specific number of steps to the left or right depending on its location on the robot, so each sensor has a different # of steps or direction to do.
+    robotStop(10); // it stops after the turn for precision
+    arm(armDown);
+    arm(armUp);
+    fullturnRightSlow(2); // once the magnet is marked, it takes that same specific number of steps to the right to return to its original position
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+
+
+  else if (magPin == magPin4)  { // this is for when magnet pin #4 detects a strong magnetic field
+
+    analogWrite (audioPin, 64);
+    robotStop(10);
+    fullturnRightSlow(2);
+    robotStop(10);
+    arm(armDown);
+    arm(armUp);
+    fullturnLeftSlow(2);
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+  else if (magPin == magPin7)  { // this is for when magnet pin #7 detects a strong magnetic field
+
+    analogWrite (audioPin, 112);
+    robotStop(10);
+    fullturnLeftSlow(2);
+    robotStop(10);
+    arm(armDown);
+    arm(armUp);
+    fullturnRightSlow(2);
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+  else if (magPin == magPin3) { // this is for when magnet pin #3 detects a strong magnetic field
+
+    analogWrite (audioPin, 48);
+    robotStop(10);
+    fullturnRightSlow(5);
+    robotStop(10);
+    arm(armDown);
+    arm(armUp);
+    fullturnLeftSlow(5);
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+  else if (magPin == magPin8) { // this is for when magnet pin #8 detects a strong magnetic field
+
+    analogWrite (audioPin, 128);
+    robotStop(10);
+    fullturnLeftSlow(8);
+    robotStop(10);
+    arm(armDown);
+    arm(armUp);
+    fullturnRightSlow(8);
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+  else if (magPin == magPin2) { // this is for when magnet pin #2 detects a strong magnetic field
+
+    analogWrite (audioPin, 32);
+    robotStop(10);
+    fullturnRightSlow(8);
+    robotStop(10);
+    arm(armDown);
+    arm(armUp);
+    fullturnLeftSlow(8);
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+  else if (magPin == magPin9) { // this is for when magnet pin #9 detects a strong magnetic field
+
+    analogWrite (audioPin, 144);
+    robotStop(10);
+    fullturnLeftSlow(11);
+    robotStop(10);
+    arm(armDown);
+    arm(armUp);
+    fullturnRightSlow(11);
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+  else { // this is for when magnet pin #1 detects a strong magnetic field
+
+    analogWrite (audioPin, 16);
+    robotStop(10);
+    fullturnRightSlow(11);
+    robotStop(10);
+    arm(armDown);
+    arm(armUp);
+    fullturnLeftSlow(11);
+    analogWrite (audioPin, 0);
+    forwardSlow(3);
+  }
+
+}
+
+void arm (int pw) { // this is the motion for the front sensor
+  for (int i = 0; i < 25; i++) {
+    createPulse(servoPinF, pw);
+    delay(20);
+  }
+}
